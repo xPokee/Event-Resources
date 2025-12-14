@@ -7,7 +7,7 @@
 /turf/cordon{
 	density = 0
 	},
-/area/awaymission/secret)
+/area/awaymission/secret/fullbright)
 "n" = (
 /obj/effect/landmark{
 	name = "Memento Mortem"
@@ -31,10 +31,10 @@
 /turf/cordon{
 	density = 0
 	},
-/area/awaymission/secret)
+/area/awaymission/secret/fullbright)
 "O" = (
 /turf/cordon,
-/area/awaymission/secret)
+/area/awaymission/secret/fullbright)
 
 (1,1,1) = {"
 O
