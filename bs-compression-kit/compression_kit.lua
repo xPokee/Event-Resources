@@ -10,14 +10,31 @@ local PATH_CRYSTAL  = "/obj/item/stack/ore/bluespace_crystal"
 
 local SIG_EXAMINE     = "atom_examine"
 local SIG_PRE_ATTACK  = "item_pre_attack"
-local SIG_ATTACKBY    = "item_attackby"
+
+-- Credit goes to Fikou on GitHub for the loadIcon function
+
+iconsByHttp = iconsByHttp or {}
+local loadIcon = function(http)
+	if iconsByHttp[http] then
+		return iconsByHttp[http]
+	end
+	local request = SS13.new("/datum/http_request")
+	local file_name = "tmp/custom_map_icon.dmi"
+	request:prepare("get", http, "", "", file_name)
+	request:begin_async()
+	while request:is_complete() == 0 do
+		sleep()
+	end
+	iconsByHttp[http] = SS13.new("/icon", file_name)
+	return iconsByHttp[http]
+end
 
 local kit_state = {}
 
 local kit = SS13.new("/obj/item", spawn_loc)
 kit.name = "bluespace compression kit"
 kit.desc = "An illegally modified BSRPED, capable of reducing the size of most items."
-kit.icon = 'icons/obj/tools.dmi'
+kit.icon = loadIcon("https://github.com/xPokee/Event-Resources/raw/refs/heads/main/bs-compression-kit/compression_kit.dmi")
 kit.icon_state = "compression_c"
 kit.inhand_icon_state = "BS_RPED"
 kit.lefthand_file = 'icons/mob/inhands/items/devices_lefthand.dmi'
@@ -37,23 +54,28 @@ end
 
 local function sparks()
     local s = SS13.new("/datum/effect_system/spark_spread")
-    s:set_up(5, 1, turf(kit))
+    s:set_up(5, 1, kit.loc)
     s:start()
 end
 
-if type(examine_list) == "userdata" then
-    list.add(examine_list, "text")
-elseif type(examine_list) == "string" then
-    return examine_list .. "<br><span class='notice'>It has "
-        .. charges_of(kit)
-        .. " charges left. Recharge with bluespace crystals.</span>"
-end
+SS13.register_signal(kit, SIG_EXAMINE, function(_, user, examine_list)
+    local text =
+        "<span class='notice'>It has " ..
+        tostring(charges_of(kit)) ..
+        " charges left. Recharge with bluespace crystals.</span>"
+
+    if type(examine_list) == "userdata" then
+        list.add(examine_list, text)
+    else
+        return tostring(examine_list) .. "<br>" .. text
+    end
+end)
 
 SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximity)
     if proximity == 0 or target == nil then return end
 
     if charges_of(kit) <= 0 then
-        dm.global_procs.playsound(turf(kit), 'sound/machines/buzz-two.ogg', 50, 1)
+        dm.global_procs.playsound(kit.loc, 'sound/machines/buzz-two.ogg', 50, 1)
         dm.global_procs.to_chat(attacker,
             "<span class='notice'>The bluespace compression kit is out of charges! Recharge it with bluespace crystals.</span>")
         return 1
@@ -63,7 +85,7 @@ SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximit
     local O = target
 
     if O.w_class == 1 then
-        dm.global_procs.playsound(turf(kit), 'sound/machines/buzz-two.ogg', 50, 1)
+        dm.global_procs.playsound(kit.loc, 'sound/machines/buzz-two.ogg', 50, 1)
         dm.global_procs.to_chat(attacker,
             "<span class='notice'>" .. tostring(O) .. " cannot be compressed smaller!.</span>")
         return 1
@@ -75,47 +97,66 @@ SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximit
         return 1
     end
 
-    if O.w_class > 1 then
-        dm.global_procs.playsound(turf(kit), 'sound/weapons/flash.ogg', 50, 1)
-        attacker:visible_message(
-            "<span class='warning'>" .. tostring(attacker) ..
-            " is compressing " .. tostring(O) ..
-            " with their bluespace compression kit!</span>"
-        )
+    local delay = 40
 
-        local ok = SS13.await(dm.global_procs, "do_after", attacker, 40, O)
-        if ok ~= 0
-            and charges_of(kit) > 0
-            and O.w_class > 1 then
-
-            dm.global_procs.playsound(turf(kit), 'sound/weapons/emitter2.ogg', 50, 1)
-            sparks()
-            dm.global_procs.flash_lighting_fx(3, 3, "#00FFFF")
-
-            O.w_class = O.w_class - 1
-            set_charges(kit, charges_of(kit) - 1)
-
-            dm.global_procs.to_chat(attacker,
-                "<span class='notice'>You successfully compress " .. tostring(O) ..
-                "! The compressor now has " .. charges_of(kit) .. " charges.</span>")
-        end
+    local ok = dm.global_procs.do_after(attacker, delay, O)
+    if ok == 0 then
+        return 1
     end
+
+    local start = dm.world.time
+    while dm.world.time < start + delay do
+        sleep()
+    end
+
+    if not SS13.is_valid(attacker)
+        or not SS13.is_valid(O)
+        or not SS13.is_valid(kit) then
+        return 1
+    end
+
+    if charges_of(kit) <= 0 or O.w_class <= 1 then
+        return 1
+    end
+
+    dm.global_procs.playsound(kit.loc, 'sound/weapons/emitter2.ogg', 50, 1)
+
+    local s = SS13.new("/datum/effect_system/spark_spread")
+    s:set_up(5, 1, kit.loc)
+    s:start()
+
+    O.w_class = O.w_class - 1
+    set_charges(kit, charges_of(kit) - 1)
+
+    dm.global_procs.to_chat(attacker,
+        "<span class='notice'>You successfully compress " .. tostring(O) ..
+        "! The compressor now has " .. charges_of(kit) .. " charges.</span>"
+    )
 
     return 1
 end)
 
-    SS13.register_signal(kit, SIG_ATTACKBY, function(_, I, attacker)
-    if not SS13.istype(I, PATH_CRYSTAL) then return end
+SS13.register_signal(kit, "atom_attackby",
+    function(src, attacking_item, user, modifiers, attack_modifiers)
 
-    set_charges(kit, charges_of(kit) + 2)
-    dm.global_procs.to_chat(attacker,
-        "<span class='notice'>You insert " .. tostring(I) ..
-        " into " .. tostring(kit) ..
-        ". It now has " .. charges_of(kit) .. " charges.</span>")
+        if not SS13.istype(attacking_item, PATH_CRYSTAL) then
+            return
+        end
 
-    if I.amount and I.amount > 1 then
-        I.amount = I.amount - 1
-    else
-        dm.global_procs.qdel(I)
+        set_charges(kit, charges_of(kit) + 2)
+
+        dm.global_procs.to_chat(user,
+            "<span class='notice'>You insert " .. tostring(attacking_item) ..
+            " into " .. tostring(kit) ..
+            ". It now has " .. charges_of(kit) .. " charges.</span>"
+        )
+
+        if attacking_item.amount and attacking_item.amount > 1 then
+            attacking_item.amount = attacking_item.amount - 1
+        else
+            dm.global_procs.qdel(attacking_item)
+        end
+
+        return 1
     end
-end)
+)
