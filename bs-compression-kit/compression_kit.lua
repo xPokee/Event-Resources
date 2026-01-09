@@ -1,0 +1,121 @@
+SS13 = require("SS13")
+SS13.wait(1)
+
+local user = SS13.get_runner_client()
+local spawn_loc = user.mob.loc
+
+local PATH_ITEM     = "/obj/item"
+local PATH_STORAGE  = "/datum/component/storage"
+local PATH_CRYSTAL  = "/obj/item/stack/ore/bluespace_crystal"
+
+local SIG_EXAMINE     = "atom_examine"
+local SIG_PRE_ATTACK  = "item_pre_attack"
+local SIG_ATTACKBY    = "item_attackby"
+
+local kit_state = {}
+
+local kit = SS13.new("/obj/item", spawn_loc)
+kit.name = "bluespace compression kit"
+kit.desc = "An illegally modified BSRPED, capable of reducing the size of most items."
+kit.icon = 'icons/obj/tools.dmi'
+kit.icon_state = "compression_c"
+kit.inhand_icon_state = "BS_RPED"
+kit.lefthand_file = 'icons/mob/inhands/items/devices_lefthand.dmi'
+kit.righthand_file = 'icons/mob/inhands/items/devices_righthand.dmi'
+kit.w_class = 3
+kit_state[kit] = {
+    charges = 5
+}
+
+local function charges_of(kit)
+    return kit_state[kit].charges
+end
+
+local function set_charges(kit, value)
+    kit_state[kit].charges = value
+end
+
+local function sparks()
+    local s = SS13.new("/datum/effect_system/spark_spread")
+    s:set_up(5, 1, turf(kit))
+    s:start()
+end
+
+if type(examine_list) == "userdata" then
+    list.add(examine_list, "text")
+elseif type(examine_list) == "string" then
+    return examine_list .. "<br><span class='notice'>It has "
+        .. charges_of(kit)
+        .. " charges left. Recharge with bluespace crystals.</span>"
+end
+
+SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximity)
+    if proximity == 0 or target == nil then return end
+
+    if charges_of(kit) <= 0 then
+        dm.global_procs.playsound(turf(kit), 'sound/machines/buzz-two.ogg', 50, 1)
+        dm.global_procs.to_chat(attacker,
+            "<span class='notice'>The bluespace compression kit is out of charges! Recharge it with bluespace crystals.</span>")
+        return 1
+    end
+
+    if not SS13.istype(target, PATH_ITEM) then return end
+    local O = target
+
+    if O.w_class == 1 then
+        dm.global_procs.playsound(turf(kit), 'sound/machines/buzz-two.ogg', 50, 1)
+        dm.global_procs.to_chat(attacker,
+            "<span class='notice'>" .. tostring(O) .. " cannot be compressed smaller!.</span>")
+        return 1
+    end
+
+    if O:GetComponent(SS13.type(PATH_STORAGE)) then
+        dm.global_procs.to_chat(attacker,
+            "<span class='notice'>You feel like compressing an item that stores other items would be counterproductive.</span>")
+        return 1
+    end
+
+    if O.w_class > 1 then
+        dm.global_procs.playsound(turf(kit), 'sound/weapons/flash.ogg', 50, 1)
+        attacker:visible_message(
+            "<span class='warning'>" .. tostring(attacker) ..
+            " is compressing " .. tostring(O) ..
+            " with their bluespace compression kit!</span>"
+        )
+
+        local ok = SS13.await(dm.global_procs, "do_after", attacker, 40, O)
+        if ok ~= 0
+            and charges_of(kit) > 0
+            and O.w_class > 1 then
+
+            dm.global_procs.playsound(turf(kit), 'sound/weapons/emitter2.ogg', 50, 1)
+            sparks()
+            dm.global_procs.flash_lighting_fx(3, 3, "#00FFFF")
+
+            O.w_class = O.w_class - 1
+            set_charges(kit, charges_of(kit) - 1)
+
+            dm.global_procs.to_chat(attacker,
+                "<span class='notice'>You successfully compress " .. tostring(O) ..
+                "! The compressor now has " .. charges_of(kit) .. " charges.</span>")
+        end
+    end
+
+    return 1
+end)
+
+    SS13.register_signal(kit, SIG_ATTACKBY, function(_, I, attacker)
+    if not SS13.istype(I, PATH_CRYSTAL) then return end
+
+    set_charges(kit, charges_of(kit) + 2)
+    dm.global_procs.to_chat(attacker,
+        "<span class='notice'>You insert " .. tostring(I) ..
+        " into " .. tostring(kit) ..
+        ". It now has " .. charges_of(kit) .. " charges.</span>")
+
+    if I.amount and I.amount > 1 then
+        I.amount = I.amount - 1
+    else
+        dm.global_procs.qdel(I)
+    end
+end)
