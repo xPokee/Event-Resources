@@ -10,7 +10,6 @@ local PATH_CRYSTAL  = "/obj/item/stack/ore/bluespace_crystal"
 
 local SIG_EXAMINE     = "atom_examine"
 local SIG_PRE_ATTACK  = "item_pre_attack"
-local SIG_ATTACKBY    = "item_attackby"
 
 -- Credit goes to Fikou on GitHub for the loadIcon function
 
@@ -59,13 +58,18 @@ local function sparks()
     s:start()
 end
 
-if type(examine_list) == "userdata" then
-    list.add(examine_list, "text")
-elseif type(examine_list) == "string" then
-    return examine_list .. "<br><span class='notice'>It has "
-        .. charges_of(kit)
-        .. " charges left. Recharge with bluespace crystals.</span>"
-end
+SS13.register_signal(kit, SIG_EXAMINE, function(_, user, examine_list)
+    local text =
+        "<span class='notice'>It has " ..
+        tostring(charges_of(kit)) ..
+        " charges left. Recharge with bluespace crystals.</span>"
+
+    if type(examine_list) == "userdata" then
+        list.add(examine_list, text)
+    else
+        return tostring(examine_list) .. "<br>" .. text
+    end
+end)
 
 SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximity)
     if proximity == 0 or target == nil then return end
@@ -121,18 +125,27 @@ SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximit
     return 1
 end)
 
-    SS13.register_signal(kit, SIG_ATTACKBY, function(_, I, attacker)
-    if not SS13.istype(I, PATH_CRYSTAL) then return end
+SS13.register_signal(kit, "atom_attackby",
+    function(src, attacking_item, user, modifiers, attack_modifiers)
 
-    set_charges(kit, charges_of(kit) + 2)
-    dm.global_procs.to_chat(attacker,
-        "<span class='notice'>You insert " .. tostring(I) ..
-        " into " .. tostring(kit) ..
-        ". It now has " .. charges_of(kit) .. " charges.</span>")
+        if not SS13.istype(attacking_item, PATH_CRYSTAL) then
+            return
+        end
 
-    if I.amount and I.amount > 1 then
-        I.amount = I.amount - 1
-    else
-        dm.global_procs.qdel(I)
+        set_charges(kit, charges_of(kit) + 2)
+
+        dm.global_procs.to_chat(user,
+            "<span class='notice'>You insert " .. tostring(attacking_item) ..
+            " into " .. tostring(kit) ..
+            ". It now has " .. charges_of(kit) .. " charges.</span>"
+        )
+
+        if attacking_item.amount and attacking_item.amount > 1 then
+            attacking_item.amount = attacking_item.amount - 1
+        else
+            dm.global_procs.qdel(attacking_item)
+        end
+
+        return 1
     end
-end)
+)
