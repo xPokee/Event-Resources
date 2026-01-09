@@ -12,12 +12,30 @@ local SIG_EXAMINE     = "atom_examine"
 local SIG_PRE_ATTACK  = "item_pre_attack"
 local SIG_ATTACKBY    = "item_attackby"
 
+-- Credit goes to Fikou on GitHub for the loadIcon function
+
+iconsByHttp = iconsByHttp or {}
+local loadIcon = function(http)
+	if iconsByHttp[http] then
+		return iconsByHttp[http]
+	end
+	local request = SS13.new("/datum/http_request")
+	local file_name = "tmp/custom_map_icon.dmi"
+	request:prepare("get", http, "", "", file_name)
+	request:begin_async()
+	while request:is_complete() == 0 do
+		sleep()
+	end
+	iconsByHttp[http] = SS13.new("/icon", file_name)
+	return iconsByHttp[http]
+end
+
 local kit_state = {}
 
 local kit = SS13.new("/obj/item", spawn_loc)
 kit.name = "bluespace compression kit"
 kit.desc = "An illegally modified BSRPED, capable of reducing the size of most items."
-kit.icon = 'icons/obj/tools.dmi'
+kit.icon = loadIcon("https://github.com/xPokee/Event-Resources/raw/refs/heads/main/bs-compression-kit/compression_kit.dmi")
 kit.icon_state = "compression_c"
 kit.inhand_icon_state = "BS_RPED"
 kit.lefthand_file = 'icons/mob/inhands/items/devices_lefthand.dmi'
@@ -37,7 +55,7 @@ end
 
 local function sparks()
     local s = SS13.new("/datum/effect_system/spark_spread")
-    s:set_up(5, 1, turf(kit))
+    s:set_up(5, 1, kit.loc)
     s:start()
 end
 
@@ -53,7 +71,7 @@ SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximit
     if proximity == 0 or target == nil then return end
 
     if charges_of(kit) <= 0 then
-        dm.global_procs.playsound(turf(kit), 'sound/machines/buzz-two.ogg', 50, 1)
+        dm.global_procs.playsound(kit.loc, 'sound/machines/buzz-two.ogg', 50, 1)
         dm.global_procs.to_chat(attacker,
             "<span class='notice'>The bluespace compression kit is out of charges! Recharge it with bluespace crystals.</span>")
         return 1
@@ -63,7 +81,7 @@ SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximit
     local O = target
 
     if O.w_class == 1 then
-        dm.global_procs.playsound(turf(kit), 'sound/machines/buzz-two.ogg', 50, 1)
+        dm.global_procs.playsound(kit.loc, 'sound/machines/buzz-two.ogg', 50, 1)
         dm.global_procs.to_chat(attacker,
             "<span class='notice'>" .. tostring(O) .. " cannot be compressed smaller!.</span>")
         return 1
@@ -76,19 +94,18 @@ SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximit
     end
 
     if O.w_class > 1 then
-        dm.global_procs.playsound(turf(kit), 'sound/weapons/flash.ogg', 50, 1)
+        dm.global_procs.playsound(kit.loc, 'sound/weapons/flash.ogg', 50, 1)
         attacker:visible_message(
             "<span class='warning'>" .. tostring(attacker) ..
             " is compressing " .. tostring(O) ..
             " with their bluespace compression kit!</span>"
         )
 
-        local ok = SS13.await(dm.global_procs, "do_after", attacker, 40, O)
-        if ok ~= 0
+        if dm.global_procs.do_after(attacker, 40, O) ~= 0
             and charges_of(kit) > 0
             and O.w_class > 1 then
 
-            dm.global_procs.playsound(turf(kit), 'sound/weapons/emitter2.ogg', 50, 1)
+            dm.global_procs.playsound(kit.loc, 'sound/weapons/emitter2.ogg', 50, 1)
             sparks()
             dm.global_procs.flash_lighting_fx(3, 3, "#00FFFF")
 
