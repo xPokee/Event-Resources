@@ -97,30 +97,41 @@ SS13.register_signal(kit, SIG_PRE_ATTACK, function(_, target, attacker, proximit
         return 1
     end
 
-    if O.w_class > 1 then
-        dm.global_procs.playsound(kit.loc, 'sound/weapons/flash.ogg', 50, 1)
-        attacker:visible_message(
-            "<span class='warning'>" .. tostring(attacker) ..
-            " is compressing " .. tostring(O) ..
-            " with their bluespace compression kit!</span>"
-        )
+    local delay = 40
 
-        if dm.global_procs.do_after(attacker, 40, O) ~= 0
-            and charges_of(kit) > 0
-            and O.w_class > 1 then
-
-            dm.global_procs.playsound(kit.loc, 'sound/weapons/emitter2.ogg', 50, 1)
-            sparks()
-            dm.global_procs.flash_lighting_fx(3, 3, "#00FFFF")
-
-            O.w_class = O.w_class - 1
-            set_charges(kit, charges_of(kit) - 1)
-
-            dm.global_procs.to_chat(attacker,
-                "<span class='notice'>You successfully compress " .. tostring(O) ..
-                "! The compressor now has " .. charges_of(kit) .. " charges.</span>")
-        end
+    local ok = dm.global_procs.do_after(attacker, delay, O)
+    if ok == 0 then
+        return 1
     end
+
+    local start = dm.world.time
+    while dm.world.time < start + delay do
+        sleep()
+    end
+
+    if not SS13.is_valid(attacker)
+        or not SS13.is_valid(O)
+        or not SS13.is_valid(kit) then
+        return 1
+    end
+
+    if charges_of(kit) <= 0 or O.w_class <= 1 then
+        return 1
+    end
+
+    dm.global_procs.playsound(kit.loc, 'sound/weapons/emitter2.ogg', 50, 1)
+
+    local s = SS13.new("/datum/effect_system/spark_spread")
+    s:set_up(5, 1, kit.loc)
+    s:start()
+
+    O.w_class = O.w_class - 1
+    set_charges(kit, charges_of(kit) - 1)
+
+    dm.global_procs.to_chat(attacker,
+        "<span class='notice'>You successfully compress " .. tostring(O) ..
+        "! The compressor now has " .. charges_of(kit) .. " charges.</span>"
+    )
 
     return 1
 end)
